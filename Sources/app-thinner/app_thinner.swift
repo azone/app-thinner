@@ -330,6 +330,11 @@ struct AppThinner: ParsableCommand {
         let versionsURL = frameworkURL.appending(path: "Versions")
         let fm = FileManager.default
         do {
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: versionsURL.path(percentEncoded: false), isDirectory: &isDir) && isDir.boolValue else {
+                return 0
+            }
+
             let urls = try fm.contentsOfDirectory(at: versionsURL, includingPropertiesForKeys: [.isSymbolicLinkKey])
             var preserveURLs: Set<URL> = []
             for url in urls {
@@ -339,11 +344,14 @@ struct AppThinner: ParsableCommand {
                     preserveURLs.insert(url.resolvingSymlinksInPath())
                 }
             }
+
             guard !preserveURLs.isEmpty else { return 0}
+
             let urlsToRemove = urls.filter { !preserveURLs.contains($0) }
             guard !urlsToRemove.isEmpty else {
                 return 0
             }
+
             var removedSize: Int64 = 0
             for url in urlsToRemove {
                 let size = calculateSize(for: url)
@@ -352,6 +360,7 @@ struct AppThinner: ParsableCommand {
                 try fm.removeItem(at: url)
                 removedSize += size
             }
+
             return removedSize
         } catch {
             if let errorData = "Remove unused framework versions error: \(error.localizedDescription)\n".red.data(using: .utf8) {
