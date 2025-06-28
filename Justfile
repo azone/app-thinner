@@ -12,3 +12,10 @@ test:
 test-only-apps:
     swift build
     .build/debug/app-thinner --apps-only --force-strip-never-used-apps --remove-unused-framework-versions {{test_dir}}
+
+release:
+    swift build -c release -Xswiftc -Osize -Xswiftc -whole-module-optimization
+    strip -x .build/release/app-thinner
+
+install:
+    sudo install .build/release/app-thinner /usr/local/bin
