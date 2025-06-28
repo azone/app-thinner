@@ -238,7 +238,7 @@ struct AppThinner: ParsableCommand {
                     }
                 }
             } catch {
-                if let errorData = "Search fat binary error: \(error.localizedDescription)".red.data(using: .utf8) {
+                if let errorData = "Search fat binary error: \(error.localizedDescription)\n".red.data(using: .utf8) {
                     try? FileHandle.standardError
                         .write(contentsOf: errorData)
                 }
@@ -339,6 +339,7 @@ struct AppThinner: ParsableCommand {
                     preserveURLs.insert(url.resolvingSymlinksInPath())
                 }
             }
+            guard !preserveURLs.isEmpty else { return 0}
             let urlsToRemove = urls.filter { !preserveURLs.contains($0) }
             guard !urlsToRemove.isEmpty else {
                 return 0
@@ -353,7 +354,7 @@ struct AppThinner: ParsableCommand {
             }
             return removedSize
         } catch {
-            if let errorData = "Remove unused framework versions error: \(error.localizedDescription)".red.data(using: .utf8) {
+            if let errorData = "Remove unused framework versions error: \(error.localizedDescription)\n".red.data(using: .utf8) {
                 try? FileHandle.standardError
                     .write(contentsOf: errorData)
             }
