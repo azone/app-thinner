@@ -3,6 +3,7 @@ import System
 import MachO
 import mach
 import CoreServices
+import AppKit
 
 import ArgumentParser
 import Rainbow
@@ -86,6 +87,24 @@ struct AppThinner: ParsableCommand {
             print("Search fat binaries for: \(appName)...")
         }
         let (fatBinaries, frameworks) = searchFatBinaries(at: path)
+
+        if appsOnly && !fatBinaries.isEmpty {
+            let runningApps: [URL: NSRunningApplication] = NSWorkspace.shared.runningApplications
+                .reduce(into: [:]) { partialResult, app in
+                    guard let url = app.bundleURL else {
+                        return
+                    }
+                    partialResult[url] = app
+                }
+            if let app = runningApps[path] {
+                print("\(appName.bold) is running, do you want to kill it(y/n)?".lightMagenta)
+                let answer = readLine()
+                if answer?.lowercased() == "y" {
+                    app.terminate()
+                }
+            }
+        }
+
         var savedSize: Int64 = 0
         for binary in fatBinaries {
             let (beforeSize, afterSize) = stripBinary(fatFile: binary)
