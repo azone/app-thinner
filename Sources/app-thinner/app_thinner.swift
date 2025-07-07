@@ -27,7 +27,7 @@ nonisolated(unsafe) let sizeFormatter: ByteCountFormatter = {
 }()
 
 @main
-struct AppThinner: ParsableCommand {
+struct AppThinner: AsyncParsableCommand {
     static let configuration: CommandConfiguration = .init(
         abstract: "Search for fat binaries. Remove unused framework versions and other architectures to free up disk space.",
         version: "0.1.0"
@@ -50,7 +50,7 @@ struct AppThinner: ParsableCommand {
 
     private var cpuType: CPUType = .init(value: 0, name: "unknown")
 
-    mutating func run() throws {
+    mutating func run() async throws {
         cpuType = detectCPUType()
 
         var totalSaved: Int64 = 0
@@ -58,11 +58,11 @@ struct AppThinner: ParsableCommand {
             print("Searching apps...")
             let apps = searchApps(at: searchDirectory)
             for app in apps {
-                totalSaved += processFiles(at: app)
+                totalSaved += await processFiles(at: app)
             }
         } else {
             print("Search and strip fat binaries...")
-            totalSaved = processFiles(at: .init(fileURLWithPath: searchDirectory))
+            totalSaved = await processFiles(at: .init(fileURLWithPath: searchDirectory))
         }
 
         if totalSaved > 0 {
@@ -72,7 +72,7 @@ struct AppThinner: ParsableCommand {
         }
     }
 
-    func processFiles(at path: URL) -> Int64 {
+    func processFiles(at path: URL) async -> Int64 {
         let resourceValues = try? path.resourceValues(forKeys: [.localizedNameKey, .isApplicationKey])
         let appName = resourceValues?.localizedName ?? path.lastPathComponent
         let originalSize = calculateSize(for: path)
@@ -97,10 +97,12 @@ struct AppThinner: ParsableCommand {
                     partialResult[url] = app
                 }
             if let app = runningApps[path] {
-                print("\(appName.bold) is running, do you want to kill it(y/n)?".lightMagenta)
+                print("\(appName.bold) is running, do you want to kill it(y/n)?".lightMagenta, terminator: "")
                 let answer = readLine()
                 if answer?.lowercased() == "y" {
-                    app.terminate()
+                    try? FileHandle.standardOutput.write(contentsOf: "Killing \(appName)...".utf8Data)
+                    await killApp(app)
+                    print("\u{001b}[2K\r\(appName) killed")
                 }
             }
         }
@@ -344,10 +346,9 @@ struct AppThinner: ParsableCommand {
 
             return (fatFile.size, Int64(data.count))
         } catch {
-            if let errorData = "Strip binary error: \(error.localizedDescription)".red.data(using: .utf8) {
-                try? FileHandle.standardError
-                    .write(contentsOf: errorData)
-            }
+            let errorData = "Strip binary error: \(error.localizedDescription)".red.utf8Data
+            try? FileHandle.standardError
+                .write(contentsOf: errorData)
             return (fatFile.size, 0)
         }
     }
@@ -389,11 +390,27 @@ struct AppThinner: ParsableCommand {
 
             return removedSize
         } catch {
-            if let errorData = "Remove unused framework versions error: \(error.localizedDescription)\n".red.data(using: .utf8) {
-                try? FileHandle.standardError
-                    .write(contentsOf: errorData)
-            }
+            let errorData = "Remove unused framework versions error: \(error.localizedDescription)\n".red.utf8Data
+            try? FileHandle.standardError
+                .write(contentsOf: errorData)
             return 0
+        }
+    }
+
+    func killApp(_ app: NSRunningApplication) async {
+        app.terminate()
+
+        if app.isTerminated {
+            return
+        }
+
+        let nc = NSWorkspace.shared.notificationCenter
+        for await notify in nc.notifications(named: NSWorkspace.didTerminateApplicationNotification) {
+            guard let killedApp = notify.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  killedApp.processIdentifier == app.processIdentifier else {
+                continue
+            }
+            break
         }
     }
 }
@@ -409,5 +426,11 @@ extension [fat_arch] {
         first {
             $0.cputype.bigEndian == cpuType.value
         }
+    }
+}
+
+extension String {
+    var utf8Data: Data {
+        Data(utf8)
     }
 }
