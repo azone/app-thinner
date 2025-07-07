@@ -321,7 +321,7 @@ struct AppThinner: ParsableCommand {
             }
 
             let data: Data? = try {
-                let fh = try FileHandle(forUpdating: fatFile.url)
+                let fh = try FileHandle(forReadingFrom: fatFile.url)
                 defer {
                     try? fh.close()
                 }
@@ -364,8 +364,8 @@ struct AppThinner: ParsableCommand {
             let urls = try fm.contentsOfDirectory(at: versionsURL, includingPropertiesForKeys: [.isSymbolicLinkKey])
             var preserveURLs: Set<URL> = []
             for url in urls {
-                let resouceValues = try url.resourceValues(forKeys: [.isSymbolicLinkKey])
-                if resouceValues.isSymbolicLink == true {
+                let resourceValues = try url.resourceValues(forKeys: [.isSymbolicLinkKey])
+                if resourceValues.isSymbolicLink == true {
                     preserveURLs.insert(url)
                     preserveURLs.insert(url.resolvingSymlinksInPath())
                 }
