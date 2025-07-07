@@ -320,22 +320,29 @@ struct AppThinner: ParsableCommand {
                 return (fatFile.size, Int64(arch.size.bigEndian))
             }
 
-            let fh = try FileHandle(forUpdating: fatFile.url)
-            defer {
-                try? fh.close()
-            }
+            let data: Data? = try {
+                let fh = try FileHandle(forUpdating: fatFile.url)
+                defer {
+                    try? fh.close()
+                }
 
-            let offset = UInt64(arch.offset.bigEndian)
-            let size = Int(arch.size.bigEndian)
-            try fh.seek(toOffset: offset)
-            guard let data = try fh.read(upToCount: size), data.count == size else {
+                let offset = UInt64(arch.offset.bigEndian)
+                let size = Int(arch.size.bigEndian)
+                try fh.seek(toOffset: offset)
+                guard let data = try fh.read(upToCount: size), data.count == size else {
+                    return nil
+                }
+
+                return data
+            }()
+
+            guard let data else {
                 return (fatFile.size, 0)
             }
 
-            try fh.truncate(atOffset: 0)
-            try fh.write(contentsOf: data)
+            try data.write(to: fatFile.url)
 
-            return (fatFile.size, Int64(size))
+            return (fatFile.size, Int64(data.count))
         } catch {
             if let errorData = "Strip binary error: \(error.localizedDescription)".red.data(using: .utf8) {
                 try? FileHandle.standardError
