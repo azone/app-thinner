@@ -405,12 +405,10 @@ struct AppThinner: AsyncParsableCommand {
         }
 
         let nc = NSWorkspace.shared.notificationCenter
-        for await notify in nc.notifications(named: NSWorkspace.didTerminateApplicationNotification) {
-            guard let killedApp = notify.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  killedApp.processIdentifier == app.processIdentifier else {
-                continue
+        for await _ in nc.notifications(named: NSWorkspace.didTerminateApplicationNotification) {
+            if app.isTerminated {
+                break
             }
-            break
         }
     }
 }
