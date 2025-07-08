@@ -397,19 +397,21 @@ struct AppThinner: AsyncParsableCommand {
         }
     }
 
+    @MainActor
     func killApp(_ app: NSRunningApplication) async {
-        app.terminate()
-
-        if app.isTerminated {
-            return
+        let pgid = app.processIdentifier
+        // find all NSRunningApplication that has the same process group id(pgid)
+        let appsToKill = NSWorkspace.shared.runningApplications.filter {
+            getpgid($0.processIdentifier) == pgid && !$0.isTerminated
         }
 
-        let nc = NSWorkspace.shared.notificationCenter
-        for await _ in nc.notifications(named: NSWorkspace.didTerminateApplicationNotification) {
-            if app.isTerminated {
-                break
-            }
+        if !app.terminate() {
+            app.forceTerminate()
         }
+
+        repeat {
+            try? await Task.sleep(for: .milliseconds(100))
+        } while !appsToKill.allSatisfy(\.isTerminated)
     }
 }
 
