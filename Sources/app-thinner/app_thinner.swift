@@ -53,16 +53,18 @@ struct AppThinner: AsyncParsableCommand {
     mutating func run() async throws {
         cpuType = detectCPUType()
 
+        let searchURL = URL(fileURLWithPath: searchDirectory)
+
         var totalSaved: Int64 = 0
         if appsOnly {
             print("Searching apps...")
-            let apps = searchApps(at: searchDirectory)
+            let apps = searchApps(at: searchURL)
             for app in apps {
                 totalSaved += await processFiles(at: app)
             }
         } else {
             print("Search and strip fat binaries...")
-            totalSaved = await processFiles(at: .init(fileURLWithPath: searchDirectory))
+            totalSaved = await processFiles(at: searchURL)
         }
 
         if totalSaved > 0 {
@@ -151,8 +153,7 @@ struct AppThinner: AsyncParsableCommand {
         return .init(value: cpu_type_t(cpuType), name: machine)
     }
 
-    func searchApps(at path: String) -> [URL] {
-        let pathURL = URL(fileURLWithPath: path)
+    func searchApps(at pathURL: URL) -> [URL] {
         let fm = FileManager.default
         let keys: [URLResourceKey] = [
             .isApplicationKey,
@@ -161,24 +162,37 @@ struct AppThinner: AsyncParsableCommand {
             .localizedNameKey
         ]
 
-        guard let enumerator = fm.enumerator(at: pathURL, includingPropertiesForKeys: keys) else {
+        let resouceValues = try? pathURL.resourceValues(forKeys: Set(keys))
+        guard resouceValues?.isWritable == true
+                && resouceValues?.isDirectory == true else {
             return []
         }
 
-        var apps: [URL] = []
-        for case let url as URL in enumerator {
-            let resouceValues = try? url.resourceValues(forKeys: Set(keys))
-            guard resouceValues?.isApplication == true
-                    && resouceValues?.isWritable == true
-                    && resouceValues?.isDirectory == true else {
-                continue
+        if resouceValues?.isApplication == true {
+            return [pathURL]
+        }
+
+        do {
+            let contents = try fm.contentsOfDirectory(at: pathURL, includingPropertiesForKeys: keys)
+
+            var apps: [URL] = []
+            for case let url in contents {
+                let resouceValues = try? url.resourceValues(forKeys: Set(keys))
+                guard resouceValues?.isWritable == true
+                        && resouceValues?.isDirectory == true else {
+                    continue
+                }
+
+                if resouceValues?.isApplication == true {
+                    apps.append(url)
+                } else {
+                    apps += searchApps(at: url)
+                }
             }
 
-            apps.append(url)
-        }
-        return apps.filter {
-            guard let filePath = FilePath($0) else { return false }
-            return filePath.components.count(where: { $0.extension == "app" }) == 1
+            return apps
+        } catch {
+            return []
         }
     }
 
