@@ -1,9 +1,10 @@
 import Foundation
 import System
 import MachO
-import mach
+//import mach
 import CoreServices
 import AppKit
+import Darwin
 
 import ArgumentParser
 import Rainbow
@@ -99,12 +100,29 @@ struct AppThinner: AsyncParsableCommand {
                     partialResult[url] = app
                 }
             if let app = runningApps[path] {
-                print("\(appName.bold) is running, do you want to kill it(y/n)?".lightMagenta, terminator: "")
-                let answer = readLine()
-                if answer?.lowercased() == "y" {
-                    try? FileHandle.standardOutput.write(contentsOf: "Killing \(appName)...".utf8Data)
-                    await killApp(app)
-                    print("\u{001b}[2K\r\(appName) killed")
+                while true {
+                    let answer = Terminal.withRawMode {
+                        if let msg = "\(appName.bold) is running, do you want to kill it(y/n)?".lightMagenta.cString(using: .utf8) {
+                            fwrite(msg, msg.count, 1, stdout)
+                            fflush(stdout)
+                        }
+
+                        var input: UInt8 = 0
+                        read(STDIN_FILENO, &input, 1)
+                        fwrite(&input, 1, 1, stdout)
+                        fflush(stdout)
+                        return Character(.init(input))
+                    }.lowercased()
+
+                    if answer == "y" {
+                        try? FileHandle.standardOutput.write(contentsOf: "\u{001b}[2K\rKilling \(appName)...".utf8Data)
+                        await killApp(app)
+                        print("\u{001b}[2K\r\(appName) killed")
+                        break
+                    } else if answer == "n" {
+                        print("\u{001b}[2K\rSkipped")
+                        return 0
+                    }
                 }
             }
         }
@@ -446,5 +464,42 @@ extension [fat_arch] {
 extension String {
     var utf8Data: Data {
         Data(utf8)
+    }
+}
+
+struct Terminal {
+    private init() {}
+
+    static func withRawMode<T>(_ action: () -> T) -> T {
+        var term = termios()
+        tcgetattr(STDIN_FILENO, &term)
+
+        var rawTerm = term
+        rawTerm.c_lflag &= ~UInt(ECHO | ICANON | ISIG | IEXTEN)
+        rawTerm.c_iflag &= ~UInt(IXON | ICRNL | BRKINT | INPCK | ISTRIP)
+        rawTerm.c_oflag &= ~UInt(OPOST)
+        rawTerm.c_cflag |= UInt(CS8)
+        rawTerm.c_cc.16 = 1
+        rawTerm.c_cc.17 = 1
+
+        tcsetattr(STDIN_FILENO, TCSANOW, &rawTerm)
+
+        defer {
+            tcsetattr(STDIN_FILENO, TCSANOW, &term)
+        }
+
+        return action()
+    }
+
+    static var isatty: Bool {
+        Foundation.isatty(STDIN_FILENO) == 1
+    }
+
+    static func getCharacter() -> Character? {
+        withRawMode {
+            var input: UInt8 = 0
+            read(STDIN_FILENO, &input, 1)
+            return Character(.init(input))
+        }
     }
 }
